@@ -31,7 +31,7 @@ def N(x):
 
 
 def save_checkpoint(model, optimizer, epoch, loss, opts):
-    fname = os.path.join(opts.checkpoint_dir, f'e_{epoch:05d}.chp')
+    fname = os.path.join(opts.training['checkpoint_dir'], f'e_{epoch:05d}.chp')
     checkpoint = {
         "model_state_dict": model.state_dict(),
         "optimizer_state_dict": optimizer.state_dict(),
@@ -44,21 +44,21 @@ def save_checkpoint(model, optimizer, epoch, loss, opts):
 
 def train_loop(model, train_loader, val_loader, opts):
     """Funzione principale per il ciclo di training."""
-    train_writer = tf.summary.create_file_writer(f"tensorboard/{opts.model}/train")
-    val_writer = tf.summary.create_file_writer(f"tensorboard/{opts.model}/val")
+    train_writer = tf.summary.create_file_writer(f"tensorboard/{opts.model['name']}/train")
+    val_writer = tf.summary.create_file_writer(f"tensorboard/{opts.model['name']}/val")
 
     optimizer = torch.optim.AdamW(
-        model.parameters(), lr=opts.learning_rate, weight_decay=opts.weight_decay
+        model.parameters(), lr=opts.training['learning_rate'], weight_decay=opts.training['weight_decay']
     )
     scheduler = torch.optim.lr_scheduler.ExponentialLR(optimizer, gamma=0.9)
     loss_function = torch.nn.CrossEntropyLoss()
 
     step = 0
-    for epoch in range(1, opts.num_epochs + 1):
+    for epoch in range(1, opts.training['num_epochs'] + 1):
         model.train()
         train_losses, train_accuracies = [], []
         for batch_idx, (X, Y) in enumerate(train_loader):
-            X, Y = X.to(opts.device), Y.to(opts.device)
+            X, Y = X.to(opts.device), Y.to(opts.device).long()
             optimizer.zero_grad()
             outputs = model(X)
             loss = loss_function(outputs, Y)
@@ -71,9 +71,9 @@ def train_loop(model, train_loader, val_loader, opts):
             accuracy = (predictions == Y).float().mean().item()
             train_accuracies.append(accuracy)
 
-            if batch_idx % opts.log_every == 0:
-                avg_loss = np.mean(train_losses[-opts.batch_window:])
-                avg_acc = np.mean(train_accuracies[-opts.batch_window:])
+            if batch_idx % opts.training['log_every'] == 0:
+                avg_loss = np.mean(train_losses[-opts.training['batch_window']:])
+                avg_acc = np.mean(train_accuracies[-opts.training['batch_window']:])
                 LOG.info(
                     f"Epoch {epoch}, Batch {batch_idx}: Loss={avg_loss:.6f}, Accuracy={avg_acc:.3f}"
                 )
@@ -86,31 +86,32 @@ def train_loop(model, train_loader, val_loader, opts):
                 step += 1
 
         # Validazione
-        val_accuracy = evaluate(model, val_loader, opts)
+        val_accuracy = q8_accuracy(model, val_loader, opts)
         with val_writer.as_default():
             tf.summary.scalar("accuracy", val_accuracy, step=epoch)
 
         LOG.info(f"Epoch {epoch}: Validation Accuracy={val_accuracy:.3f}")
 
         # Salvataggio del checkpoint
-        if epoch % opts.save_every == 0:
+        if epoch % opts.training['save_every'] == 0:
             save_checkpoint(model, optimizer, epoch, loss.item(), opts)
 
         scheduler.step()
 
 
-def evaluate(model, loader, opts):
-    """Calcola l'accuratezza sul dataset di validazione."""
+def q8_accuracy(model, loader, opts):
+    """Calcola la Q8 accuracy sul dataset di validazione."""
     model.eval()
-    accuracies = []
+    correct_predictions = 0
+    total_predictions = 0
     with torch.no_grad():
         for X, Y in loader:
             X, Y = X.to(opts.device), Y.to(opts.device)
             outputs = model(X)
             predictions = torch.argmax(outputs, dim=1)
-            accuracy = (predictions == Y).float().mean().item()
-            accuracies.append(accuracy)
-    return np.mean(accuracies)
+            correct_predictions += (predictions == Y).sum().item()
+            total_predictions += Y.numel()
+    return correct_predictions / total_predictions
 
 
 def main(opts):
@@ -127,14 +128,50 @@ def main(opts):
         )
     else:
         raise ValueError(f"Modello sconosciuto {opts.model['name']}")
-    visualize(model, "unet", torch.randn(opts.training['batch_size'], 57, 128, 128))
+
+    visualize(model, "unet", torch.randn(opts.training['batch_size'], opts.model['in_channels'], 700))
     model = model.to(opts.device)
     LOG.info("Caricamento del dataset")
-    train_loader = data_load(opts.dataset['train_path'])
-    val_loader = data_load(opts.dataset['test_path'])
+
+    # Caricamento dei dati
+    train_X, train_y, val_X, val_y, test_X, test_y = data_load(opts.dataset['train_path'])
+    eval_X, eval_y = data_load(opts.dataset['test_path'])
+
+    print("Contenuto di val_X: ", val_X)
+    print("Contenuto di val_y: ", val_y)
+    print("Contenuto di test_X: ", test_X)
+    print("Contenuto di test_y: ", test_y)
+
+    # Creazione dei DataLoader
+    train_loader = torch.utils.data.DataLoader(
+        dataset=list(zip(torch.tensor(train_X), torch.tensor(train_y))),
+        batch_size=opts.training['batch_size'],
+        shuffle=True
+    )
+    val_loader = torch.utils.data.DataLoader(
+        dataset=list(zip(torch.tensor(val_X), torch.tensor(val_y))),
+        batch_size=opts.training['batch_size'],
+        shuffle=False
+    )
+    test_loader = torch.utils.data.DataLoader(
+        dataset=list(zip(torch.tensor(test_X), torch.tensor(test_y))),
+        batch_size=opts.training['batch_size'],
+        shuffle=False
+    )
+    cb513_test_loader = torch.utils.data.DataLoader(
+        dataset=list(zip(torch.tensor(eval_X), torch.tensor(eval_y))),
+        batch_size=opts.training['batch_size'],
+        shuffle=False
+    )
 
     LOG.info("Inizio del training")
     train_loop(model, train_loader, val_loader, opts)
+
+    LOG.info("Inizio della valutazione su cullpdb+profile_6133")
+    q8_accuracy(model, test_loader, opts)
+
+    LOG.info("Inizio della valutazione su cb513")
+    q8_accuracy(model, cb513_test_loader, opts)
 
 
 if __name__ == "__main__":

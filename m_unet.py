@@ -5,14 +5,14 @@ import yaml
 
 class ConvBlock(nn.Module):
     def __init__(self, in_channels, out_channels, kernel_size):
-        """Blocco di convoluzione con due layer convoluzionali, BatchNorm e ReLU."""
+        """Blocco di convoluzione 1D con due layer convoluzionali, BatchNorm e ReLU."""
         super().__init__()
         self.layers = nn.Sequential(
-            nn.Conv2d(in_channels, out_channels, kernel_size, padding='same'),
-            nn.BatchNorm2d(out_channels),
+            nn.Conv1d(in_channels, out_channels, kernel_size, padding='same'),
+            nn.BatchNorm1d(out_channels),
             nn.ReLU(),
-            nn.Conv2d(out_channels, out_channels, kernel_size, padding='same'),
-            nn.BatchNorm2d(out_channels),
+            nn.Conv1d(out_channels, out_channels, kernel_size, padding='same'),
+            nn.BatchNorm1d(out_channels),
             nn.ReLU(),
         )
 
@@ -22,9 +22,9 @@ class ConvBlock(nn.Module):
 
 class DownBlock(nn.Module):
     def __init__(self, in_channels, out_channels, kernel_size):
-        """Blocco di discesa con MaxPooling seguito da un ConvBlock."""
+        """Blocco di discesa 1D con MaxPooling seguito da un ConvBlock."""
         super().__init__()
-        self.pool = nn.MaxPool2d(kernel_size=2)
+        self.pool = nn.MaxPool1d(kernel_size=2)
         self.conv = ConvBlock(in_channels, out_channels, kernel_size)
 
     def forward(self, x):
@@ -37,14 +37,13 @@ class UpBlock(nn.Module):
     def __init__(self, in_channels, out_channels, kernel_size):
         """Blocco di risalita con un'operazione di upsampling e concatenazione."""
         super().__init__()
-        self.upconv = nn.ConvTranspose2d(in_channels, out_channels, kernel_size=2, stride=2)
+        self.upconv = nn.ConvTranspose1d(in_channels, out_channels, kernel_size=2, stride=2)
         self.conv = ConvBlock(in_channels, out_channels, kernel_size)
 
     def forward(self, x, skip_connection):
         x = self.upconv(x)
-        diffY = skip_connection.size()[2] - x.size()[2]
-        diffX = skip_connection.size()[3] - x.size()[3]
-        x = nn.functional.pad(x, [diffX // 2, diffX - diffX // 2, diffY // 2, diffY - diffY // 2])
+        diff = skip_connection.size(-1) - x.size(-1)
+        x = nn.functional.pad(x, [diff // 2, diff - diff // 2])
         x = torch.cat((x, skip_connection), dim=1)
         x = self.conv(x)
         return x
@@ -52,7 +51,7 @@ class UpBlock(nn.Module):
 
 class UNet(nn.Module):
     def __init__(self, in_channels, out_channels, base_filters, kernel_size):
-        """Implementazione della U-Net con blocchi modulari."""
+        """Implementazione della U-Net 1D con blocchi modulari."""
         super().__init__()
         self.encoder1 = ConvBlock(in_channels, base_filters, kernel_size)
         self.encoder2 = DownBlock(base_filters, base_filters * 2, kernel_size)
@@ -66,7 +65,7 @@ class UNet(nn.Module):
         self.decoder2 = UpBlock(base_filters * 4, base_filters * 2, kernel_size)
         self.decoder1 = UpBlock(base_filters * 2, base_filters, kernel_size)
 
-        self.final_conv = nn.Conv2d(base_filters, out_channels, kernel_size=1)
+        self.final_conv = nn.Conv1d(base_filters, out_channels, kernel_size=1)
 
     def forward(self, x):
         enc1 = self.encoder1(x)
@@ -105,9 +104,9 @@ def main():
     from rich.console import Console
     console = Console()
 
-    batch_size = 4
-    input_size = 128
-    input_data = torch.randn(batch_size, 57, input_size, input_size)
+    batch_size = 256
+    input_length = 700
+    input_data = torch.randn(batch_size, 57, input_length)
 
     config_path = "m_unet.yaml"
     model = load_model(config_path)

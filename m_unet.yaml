@@ -1,21 +1,21 @@
 model:
   name: unet
-  in_channels: 57
+  in_channels: 21
   out_channels: 8
   base_filters: 64
   kernel_size: 3
 
 training:
-  learning_rate: 0.001
-  batch_size: 16
-  num_epochs: 20
-  weight_decay: 1e-5
+  learning_rate: 0.0002
+  batch_size: 256
+  num_epochs: 300
+  weight_decay: 0.0005
   checkpoint_dir: checkpoints/
-  log_every: 10
-  save_every: 5
-  batch_window: 5  # Numero di batch per il calcolo della media delle metriche
+  log_every: 5
+  save_every: 8
+  batch_window: 10  # Numero di batch per il calcolo della media delle metriche
 
 dataset:
-  train_path: cullpdb+profile_5926_filtered.npy.gz
+  train_path: cullpdb+profile_6133.npy.gz
   test_path: cb513+profile_split1.npy.gz
   data_dir: data/  # Directory base dei file di dataset
