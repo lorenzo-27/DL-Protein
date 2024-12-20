@@ -2,42 +2,60 @@ import gzip
 import pandas as pd
 import numpy as np
 import matplotlib.pyplot as plt
-import timeit
 import argparse
-import os
 
 AA = ['A', 'C', 'E', 'D', 'G', 'F', 'I', 'H', 'K', 'M', 'L', 'N', 'Q', 'P', 'S', 'R', 'T', 'W', 'V', 'Y', 'X', 'NoSeq']
 SS = ['L', 'B', 'E', 'G', 'I', 'H', 'S', 'T', 'NoSeq']
 
+def split_dataset(data):
+    """
+    Suddivide il dataset in training (5600), validation (256) e test (272) come da Zhou et al. 2014.
+    """
+    train = data[:5600]
+    val = data[5600:5856]
+    test = data[5856:]
+    return train, val, test
 
 def data_load(path):
+    """
+    Carica il dataset e restituisce i dati e le etichette suddivisi in training, validation e test.
+    """
     with gzip.open('data/%s' % (path), 'rb') as f:
-        data = np.load(f, allow_pickle=True)
+        data = np.load(f)
     data = data.reshape(-1, 700, 57)  # original 57 features
 
     X = data[:, :, np.arange(21)]  # 20-residues + non-seq
-    X = X.transpose(0, 2, 1)
-    X = X.astype('float32')
+    X = X.transpose(0, 2, 1).astype('float32')
 
     y = data[:, :, 22:30]  # 8-state
-    y = np.array([np.dot(yi, np.arange(8)) for yi in y])
-    y = y.astype('float32')
+    y = np.array([np.dot(yi, np.arange(8)) for yi in y]).astype('float32')
 
-    mask = data[:, :, 30] * -1 + 1
-    seq_len = mask.sum(axis=1)
-    seq_len = seq_len.astype('int')
-
-    return X, y, seq_len
+    if 'cullpdb' in path:
+        X_train, X_val, X_test = split_dataset(X)
+        y_train, y_val, y_test = split_dataset(y)
+        return X_train, y_train, X_val, y_val, X_test, y_test
+    else:
+        return X, y
 
 
 def main(args):
-    train_X, train_y, train_seq_len = data_load(args.train_path)
-    print('train %d sequences' % (len(train_seq_len)))
+    # Caricamento del training set
+    train_X, train_y, val_X, val_y, test_X, test_y = data_load(args.train_path)
+    train_seq_len = (train_X[:, 0, :] != 0).sum(axis=1)
+    val_seq_len = (val_X[:, 0, :] != 0).sum(axis=1)
+    test_seq_len = (test_X[:, 0, :] != 0).sum(axis=1)
+    total_seq_len = np.concatenate([train_seq_len, val_seq_len, test_seq_len])
 
-    test_X, test_y, test_seq_len = data_load(args.test_path)
+    print('train %d sequences' % (len(total_seq_len)))
+
+    # Caricamento del test set
+    test_X, test_y = data_load(args.test_path)
+    test_seq_len = (test_X[:, 0, :] != 0).sum(axis=1)  # Calcolo di seq_len
+
     print('test %d sequences' % (len(test_seq_len)))
 
-    # sequence length
+    # Generazione dei grafici
+    # Lunghezza delle sequenze
     plt.figure(figsize=(12, 4))
 
     ax = plt.subplot(1, 2, 1)
@@ -133,7 +151,7 @@ def main(args):
 
 if __name__ == '__main__':
     parser = argparse.ArgumentParser(description='Protein Secondary Structure Prediction')
-    parser.add_argument('--train_path', default='cullpdb+profile_5926_filtered.npy.gz')
+    parser.add_argument('--train_path', default='cullpdb+profile_6133.npy.gz')
     parser.add_argument('--test_path', default='cb513+profile_split1.npy.gz')
     args = parser.parse_args()
     print(vars(args))
