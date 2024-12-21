@@ -1,3 +1,4 @@
+import os
 import gzip
 import pandas as pd
 import numpy as np
@@ -39,6 +40,9 @@ def data_load(path):
 
 
 def main(args):
+    # Ensure figures directory exists
+    os.makedirs('figure', exist_ok=True)
+
     # training set
     train_X, train_y, val_X, val_y, test_X, test_y = data_load(args.train_path)
     train_seq_len = (train_X != 0).any(axis=1).sum(axis=1)
