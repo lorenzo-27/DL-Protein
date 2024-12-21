@@ -11,6 +11,7 @@ from rich.logging import RichHandler
 from ipdb import launch_ipdb_on_exception
 
 from m_unet import UNet
+from m_cnn import CNN
 
 
 def get_logger():
@@ -42,10 +43,12 @@ def save_checkpoint(model, optimizer, epoch, loss, opts):
     LOG.info(f"Saved checkpoint {fname}")
 
 
-def train_loop(model, train_loader, val_loader, opts):
+def train_loop(model, train_loader, val_loader, test_loader, cb513_test_loader, opts):
     """Funzione principale per il ciclo di training."""
     train_writer = tf.summary.create_file_writer(f"tensorboard/{opts.model['name']}/train")
     val_writer = tf.summary.create_file_writer(f"tensorboard/{opts.model['name']}/val")
+    test_writer = tf.summary.create_file_writer(f"tensorboard/{opts.model['name']}/test")
+    cb513_writer = tf.summary.create_file_writer(f"tensorboard/{opts.model['name']}/cb513")
 
     optimizer = torch.optim.AdamW(
         model.parameters(), lr=opts.training['learning_rate'], weight_decay=opts.training['weight_decay']
@@ -58,10 +61,11 @@ def train_loop(model, train_loader, val_loader, opts):
         model.train()
         train_losses, train_accuracies = [], []
         for batch_idx, (X, Y) in enumerate(train_loader):
-            X, Y = X.to(opts.device), Y.to(opts.device).long()
+            X, Y = X.to(opts.device), Y.to(opts.device)
             optimizer.zero_grad()
             outputs = model(X)
             loss = loss_function(outputs, Y)
+            loss = torch.mean(loss) # serve per evitare un errore di dimensione
             loss.backward()
             optimizer.step()
 
@@ -81,16 +85,22 @@ def train_loop(model, train_loader, val_loader, opts):
                 # Scrittura su TensorBoard
                 with train_writer.as_default():
                     tf.summary.scalar("loss", avg_loss, step=step)
-                    tf.summary.scalar("accuracy", avg_acc, step=step)
+                    tf.summary.scalar("train_accuracy", avg_acc, step=step)
 
                 step += 1
 
         # Validazione
         val_accuracy = q8_accuracy(model, val_loader, opts)
+        test_accuracy = q8_accuracy(model, test_loader, opts)
+        cb513_accuracy = q8_accuracy(model, cb513_test_loader, opts)
         with val_writer.as_default():
-            tf.summary.scalar("accuracy", val_accuracy, step=epoch)
+            tf.summary.scalar("val_accuracy", val_accuracy, step=epoch)
+        with test_writer.as_default():
+            tf.summary.scalar("val_accuracy", test_accuracy, step=epoch)
+        with cb513_writer.as_default():
+            tf.summary.scalar("val_accuracy", cb513_accuracy, step=epoch)
 
-        LOG.info(f"Epoch {epoch}: Validation Accuracy={val_accuracy:.3f}")
+        LOG.info(f"Epoch {epoch}: Validation Accuracy={val_accuracy:.3f}, Test Accuracy={test_accuracy:.3f}, CB513 Accuracy={cb513_accuracy:.3f}")
 
         # Salvataggio del checkpoint
         if epoch % opts.training['save_every'] == 0:
@@ -126,21 +136,24 @@ def main(opts):
             base_filters=opts.model['base_filters'],
             kernel_size=opts.model['kernel_size'],
         )
+        visualize(model, "unet", torch.randn(opts.training['batch_size'], opts.model['in_channels'], 700))
+    elif opts.model['name'] == "cnn":
+        model = CNN(
+            in_channels=opts.model['in_channels'],
+            out_channels=opts.model['out_channels'],
+            base_filters=opts.model['base_filters'],
+            kernel_size=opts.model['kernel_size'],
+        )
+        visualize(model, "cnn", torch.randn(opts.training['batch_size'], opts.model['in_channels'], 700))
     else:
         raise ValueError(f"Modello sconosciuto {opts.model['name']}")
 
-    visualize(model, "unet", torch.randn(opts.training['batch_size'], opts.model['in_channels'], 700))
     model = model.to(opts.device)
     LOG.info("Caricamento del dataset")
 
     # Caricamento dei dati
     train_X, train_y, val_X, val_y, test_X, test_y = data_load(opts.dataset['train_path'])
     eval_X, eval_y = data_load(opts.dataset['test_path'])
-
-    print("Contenuto di val_X: ", val_X)
-    print("Contenuto di val_y: ", val_y)
-    print("Contenuto di test_X: ", test_X)
-    print("Contenuto di test_y: ", test_y)
 
     # Creazione dei DataLoader
     train_loader = torch.utils.data.DataLoader(
@@ -165,13 +178,7 @@ def main(opts):
     )
 
     LOG.info("Inizio del training")
-    train_loop(model, train_loader, val_loader, opts)
-
-    LOG.info("Inizio della valutazione su cullpdb+profile_6133")
-    q8_accuracy(model, test_loader, opts)
-
-    LOG.info("Inizio della valutazione su cb513")
-    q8_accuracy(model, cb513_test_loader, opts)
+    train_loop(model, train_loader, val_loader, test_loader, cb513_test_loader, opts)
 
 
 if __name__ == "__main__":
