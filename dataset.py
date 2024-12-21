@@ -25,10 +25,10 @@ def data_load(path):
     data = data.reshape(-1, 700, 57)  # original 57 features
 
     X = data[:, :, np.arange(21)]  # 20-residues + non-seq
-    X = X.transpose(0, 2, 1).astype('float32')
+    X = X.transpose(0, 2, 1).astype(np.float32)
 
     y = data[:, :, 22:30]  # 8-state
-    y = np.array([np.dot(yi, np.arange(8)) for yi in y]).astype('float32')
+    y = np.array([np.dot(yi, np.arange(8)) for yi in y]).astype(int)
 
     if 'cullpdb' in path:
         X_train, X_val, X_test = split_dataset(X)
@@ -39,18 +39,18 @@ def data_load(path):
 
 
 def main(args):
-    # Caricamento del training set
+    # training set
     train_X, train_y, val_X, val_y, test_X, test_y = data_load(args.train_path)
-    train_seq_len = (train_X[:, 0, :] != 0).sum(axis=1)
-    val_seq_len = (val_X[:, 0, :] != 0).sum(axis=1)
-    test_seq_len = (test_X[:, 0, :] != 0).sum(axis=1)
+    train_seq_len = (train_X != 0).any(axis=1).sum(axis=1)
+    val_seq_len = (val_X != 0).any(axis=1).sum(axis=1)
+    test_seq_len = (test_X != 0).any(axis=1).sum(axis=1)
     total_seq_len = np.concatenate([train_seq_len, val_seq_len, test_seq_len])
 
     print('train %d sequences' % (len(total_seq_len)))
 
-    # Caricamento del test set
+    # test set
     test_X, test_y = data_load(args.test_path)
-    test_seq_len = (test_X[:, 0, :] != 0).sum(axis=1)  # Calcolo di seq_len
+    test_seq_len = (test_X != 0).any(axis=1).sum(axis=1)
 
     print('test %d sequences' % (len(test_seq_len)))
 
