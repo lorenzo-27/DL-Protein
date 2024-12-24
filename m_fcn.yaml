@@ -1,0 +1,21 @@
+model:
+  name: fcn
+  in_channels: 21
+  out_channels: 8
+  base_filters: 64
+
+training:
+  learning_rate: 0.0002
+  batch_size: 64
+  num_epochs: 300
+  weight_decay: 0.0005
+  checkpoint_dir: checkpoints/
+  log_every: 5
+  save_every: 8
+  batch_window: 10  # Numero di batch per il calcolo della media delle metriche
+
+dataset:
+  train_path: cullpdb+profile_6133.npy.gz
+  test_path: cb513+profile_split1.npy.gz
+  data_dir: data/  # Directory base dei file di dataset
+  seed: 42 # seed per poter riprodurre gli esperimenti
