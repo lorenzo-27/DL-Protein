@@ -19,3 +19,4 @@ dataset:
   train_path: cullpdb+profile_6133.npy.gz
   test_path: cb513+profile_split1.npy.gz
   data_dir: data/  # Directory base dei file di dataset
+  seed: 42 # seed per poter riprodurre gli esperimenti

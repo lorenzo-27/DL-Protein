@@ -1,6 +1,6 @@
 import torch
-from torch import nn
 import yaml
+from torch import nn
 
 
 class ConvBlock(nn.Module):
@@ -8,10 +8,10 @@ class ConvBlock(nn.Module):
         """Blocco di convoluzione 1D con due layer convoluzionali, BatchNorm e ReLU."""
         super().__init__()
         self.layers = nn.Sequential(
-            nn.Conv1d(in_channels, out_channels, kernel_size, padding='same'),
+            nn.Conv1d(in_channels, out_channels, kernel_size, padding="same"),
             nn.BatchNorm1d(out_channels),
             nn.ReLU(),
-            nn.Conv1d(out_channels, out_channels, kernel_size, padding='same'),
+            nn.Conv1d(out_channels, out_channels, kernel_size, padding="same"),
             nn.BatchNorm1d(out_channels),
             nn.ReLU(),
         )
@@ -37,7 +37,9 @@ class UpBlock(nn.Module):
     def __init__(self, in_channels, out_channels, kernel_size):
         """Blocco di risalita con un'operazione di upsampling e concatenazione."""
         super().__init__()
-        self.upconv = nn.ConvTranspose1d(in_channels, out_channels, kernel_size=2, stride=2)
+        self.upconv = nn.ConvTranspose1d(
+            in_channels, out_channels, kernel_size=2, stride=2
+        )
         self.conv = ConvBlock(in_channels, out_channels, kernel_size)
 
     def forward(self, x, skip_connection):
@@ -85,28 +87,29 @@ class UNet(nn.Module):
 
 def load_model(config_path):
     """Carica il modello U-Net basato sui parametri forniti in un file YAML."""
-    with open(config_path, 'r') as file:
+    with open(config_path, "r") as file:
         config = yaml.safe_load(file)
 
-    model_params = config['model']
+    model_params = config["model"]
     model = UNet(
-        in_channels=model_params['in_channels'],
-        out_channels=model_params['out_channels'],
-        base_filters=model_params['base_filters'],
-        kernel_size=model_params['kernel_size'],
+        in_channels=model_params["in_channels"],
+        out_channels=model_params["out_channels"],
+        base_filters=model_params["base_filters"],
+        kernel_size=model_params["kernel_size"],
     )
     return model
 
 
 def main():
     """Funzione di test per verificare l'architettura del modello."""
-    from torchinfo import summary
     from rich.console import Console
+    from torchinfo import summary
+
     console = Console()
 
     batch_size = 256
     input_length = 700
-    input_data = torch.randn(batch_size, 57, input_length)
+    input_data = torch.randn(batch_size, 21, input_length)
 
     config_path = "m_unet.yaml"
     model = load_model(config_path)
@@ -126,5 +129,6 @@ def main():
 
 if __name__ == "__main__":
     from ipdb import launch_ipdb_on_exception
+
     with launch_ipdb_on_exception():
         main()
