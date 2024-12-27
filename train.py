@@ -99,18 +99,24 @@ def train_loop(model, train_loader, val_loader, test_loader, cb513_test_loader, 
                 step += 1
 
         # Validazione
-        val_accuracy = q8_accuracy(model, val_loader, opts)
-        test_accuracy = q8_accuracy(model, test_loader, opts)
-        cb513_accuracy = q8_accuracy(model, cb513_test_loader, opts)
+        val_q8_accuracy = q8_accuracy(model, val_loader, opts)
+        test_q8_accuracy = q8_accuracy(model, test_loader, opts)
+        cb513_q8_accuracy = q8_accuracy(model, cb513_test_loader, opts)
+        val_q3_accuracy = q3_accuracy(model, val_loader, opts)
+        test_q3_accuracy = q3_accuracy(model, test_loader, opts)
+        cb513_q3_accuracy = q3_accuracy(model, cb513_test_loader, opts)
         with val_writer.as_default():
-            tf.summary.scalar("val_accuracy", val_accuracy, step=epoch)
+            tf.summary.scalar("val_q8_accuracy", val_q8_accuracy, step=epoch)
+            tf.summary.scalar("val_q3_accuracy", val_q3_accuracy, step=epoch)
         with test_writer.as_default():
-            tf.summary.scalar("val_accuracy", test_accuracy, step=epoch)
+            tf.summary.scalar("val_q8_accuracy", test_q8_accuracy, step=epoch)
+            tf.summary.scalar("val_q3_accuracy", test_q3_accuracy, step=epoch)
         with cb513_writer.as_default():
-            tf.summary.scalar("val_accuracy", cb513_accuracy, step=epoch)
+            tf.summary.scalar("val_q8_accuracy", cb513_q8_accuracy, step=epoch)
+            tf.summary.scalar("val_q3_accuracy", cb513_q3_accuracy, step=epoch)
 
         LOG.info(
-            f"Epoch {epoch}: Validation Accuracy={val_accuracy:.3f}, Test Accuracy={test_accuracy:.3f}, CB513 Accuracy={cb513_accuracy:.3f}"
+            f"Epoch {epoch}: Validation Accuracy (Q8 | Q3) = {val_q8_accuracy:.3f} | {val_q3_accuracy:.3f}, Test Accuracy (Q8 | Q3) = {test_q8_accuracy:.3f} | {test_q3_accuracy:.3f}, CB513 Accuracy (Q8 | Q3) = {cb513_q8_accuracy:.3f} | {cb513_q3_accuracy:.3f}"
         )
 
         # Salvataggio del checkpoint
@@ -132,6 +138,44 @@ def q8_accuracy(model, loader, opts):
             predictions = torch.argmax(outputs, dim=1)
             correct_predictions += (predictions == Y.argmax(dim=1)).sum().item()
             total_predictions += Y.numel() // 8
+    return correct_predictions / total_predictions
+
+def q3_accuracy(model, loader, opts):
+    """Calcola la Q3 accuracy sul dataset di validazione."""
+    # Mappatura da Q8 a Q3
+    q8_to_q3 = {
+        0: 0,  # H -> H (helix)
+        1: 0,  # G -> H (helix)
+        2: 0,  # I -> H (helix)
+        3: 1,  # E -> E (strand)
+        4: 1,  # B -> E (strand)
+        5: 2,  # T -> C (coil)
+        6: 2,  # S -> C (coil)
+        7: 2,  # C -> C (coil)
+    }
+
+    model.eval()
+    correct_predictions = 0
+    total_predictions = 0
+    with torch.no_grad():
+        for X, Y in loader:
+            X, Y = X.to(opts.device), Y.to(opts.device)
+            outputs = model(X)
+            predictions_q8 = torch.argmax(outputs, dim=1)
+            predictions_q3 = torch.tensor(
+                [q8_to_q3[p.item()] for p in predictions_q8.flatten()],
+                device=opts.device,
+            ).reshape(predictions_q8.shape)
+
+            labels_q8 = Y.argmax(dim=1)
+            labels_q3 = torch.tensor(
+                [q8_to_q3[l.item()] for l in labels_q8.flatten()],
+                device=opts.device,
+            ).reshape(labels_q8.shape)
+
+            correct_predictions += (predictions_q3 == labels_q3).sum().item()
+            total_predictions += labels_q3.numel()
+
     return correct_predictions / total_predictions
 
 
