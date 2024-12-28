@@ -13,6 +13,7 @@ from rich.logging import RichHandler
 from m_cnn import CNN
 from m_fcn import FCN
 from m_unet import UNet
+from m_unet_dropout import UNetDropout
 
 
 def get_logger():
@@ -62,10 +63,15 @@ def train_loop(model, train_loader, val_loader, test_loader, cb513_test_loader, 
         lr=opts.training["learning_rate"],
         weight_decay=opts.training["weight_decay"],
     )
-    scheduler = torch.optim.lr_scheduler.ExponentialLR(optimizer, gamma=0.9)
+    # scheduler = torch.optim.lr_scheduler.ExponentialLR(optimizer, gamma=0.9)
+    scheduler = torch.optim.lr_scheduler.ReduceLROnPlateau(optimizer, mode='min', factor=0.1, patience=5, verbose=True)
     loss_function = torch.nn.CrossEntropyLoss()
 
     step = 0
+    best_cb513_q8_accuracy = 0
+    epochs_without_improvement = 0
+    early_stopping_patience = opts.training["early_stopping_patience"]
+
     for epoch in range(1, opts.training["num_epochs"] + 1):
         model.train()
         train_losses, train_accuracies = [], []
@@ -90,94 +96,114 @@ def train_loop(model, train_loader, val_loader, test_loader, cb513_test_loader, 
                 LOG.info(
                     f"Epoch {epoch}, Batch {batch_idx}: Loss={avg_loss:.6f}, Accuracy={avg_acc:.3f}"
                 )
-
-                # Scrittura su TensorBoard
-                with train_writer.as_default():
-                    tf.summary.scalar("loss", avg_loss, step=step)
-                    tf.summary.scalar("train_accuracy", avg_acc, step=step)
-
+                log_metrics(train_writer, {"train_loss": avg_loss, "train_accuracy": avg_acc}, step)
                 step += 1
 
-        # Validazione
-        val_q8_accuracy = q8_accuracy(model, val_loader, opts)
-        test_q8_accuracy = q8_accuracy(model, test_loader, opts)
-        cb513_q8_accuracy = q8_accuracy(model, cb513_test_loader, opts)
-        val_q3_accuracy = q3_accuracy(model, val_loader, opts)
-        test_q3_accuracy = q3_accuracy(model, test_loader, opts)
-        cb513_q3_accuracy = q3_accuracy(model, cb513_test_loader, opts)
-        with val_writer.as_default():
-            tf.summary.scalar("val_q8_accuracy", val_q8_accuracy, step=epoch)
-            tf.summary.scalar("val_q3_accuracy", val_q3_accuracy, step=epoch)
-        with test_writer.as_default():
-            tf.summary.scalar("val_q8_accuracy", test_q8_accuracy, step=epoch)
-            tf.summary.scalar("val_q3_accuracy", test_q3_accuracy, step=epoch)
-        with cb513_writer.as_default():
-            tf.summary.scalar("val_q8_accuracy", cb513_q8_accuracy, step=epoch)
-            tf.summary.scalar("val_q3_accuracy", cb513_q3_accuracy, step=epoch)
+        if opts.training["include_q3"] == False:
+            val_loss, val_q8_accuracy = evaluate(model, val_loader, loss_function, opts)
+            test_loss, test_q8_accuracy = evaluate(model, test_loader, loss_function, opts)
+            cb513_loss, cb513_q8_accuracy = evaluate(model, cb513_test_loader, loss_function, opts)
+            log_metrics(val_writer, {"loss": val_loss, "accuracy": val_q8_accuracy}, epoch)
+            log_metrics(test_writer, {"loss": test_loss, "accuracy": test_q8_accuracy}, epoch)
+            log_metrics(cb513_writer, {"loss": cb513_loss, "accuracy": cb513_q8_accuracy}, epoch)
+            LOG.info(f"Epoch {epoch}: Acc[Q8] - ValLoss = {val_loss:.6f}, ValAcc={val_q8_accuracy:.3f}, TestLoss={test_loss:.6f}, TestAcc={test_q8_accuracy:.3f}, CB513Loss = {cb513_loss:.6f}, CB513Acc={cb513_q8_accuracy:.3f}")
 
-        LOG.info(
-            f"Epoch {epoch}: Validation Accuracy (Q8 | Q3) = {val_q8_accuracy:.3f} | {val_q3_accuracy:.3f}, Test Accuracy (Q8 | Q3) = {test_q8_accuracy:.3f} | {test_q3_accuracy:.3f}, CB513 Accuracy (Q8 | Q3) = {cb513_q8_accuracy:.3f} | {cb513_q3_accuracy:.3f}"
-        )
+        elif opts.training["include_q3"] == True:
+            val_loss, val_q8_accuracy, val_q3_accuracy = evaluate(model, val_loader, loss_function, opts)
+            test_loss, test_q8_accuracy, test_q3_accuracy = evaluate(model, test_loader, loss_function, opts)
+            cb513_loss, cb513_q8_accuracy, cb513_q3_accuracy = evaluate(model, cb513_test_loader, loss_function, opts)
+            log_metrics(val_writer, {"loss": val_loss, "accuracy": val_q8_accuracy, "accuracy": val_q3_accuracy}, epoch)
+            log_metrics(test_writer, {"loss": test_loss, "accuracy": test_q8_accuracy, "accuracy": test_q3_accuracy}, epoch)
+            log_metrics(cb513_writer, {"loss": cb513_loss, "accuracy": cb513_q8_accuracy, "accuracy": cb513_q3_accuracy}, epoch)
+            LOG.info(f"Epoch {epoch}: Acc[Q8/Q3] - ValLoss = {val_loss:.6f}, ValAcc={val_q8_accuracy:.3f}/{val_q3_accuracy:.3f}, TestLoss={test_loss:.6f}, TestAcc={test_q8_accuracy:.3f}/{test_q3_accuracy:.3f}, CB513Loss = {cb513_loss:.6f}, CB513Acc={cb513_q8_accuracy:.3f}/{cb513_q3_accuracy:.3f}")
+
+        else:
+            raise ValueError(f"Unknown train type {opts.training['include_q3']}")
+
+        # Early stopping check
+        if cb513_q8_accuracy > best_cb513_q8_accuracy:
+            best_cb513_q8_accuracy = cb513_q8_accuracy
+            epochs_without_improvement = 0
+        else:
+            epochs_without_improvement += 1
+
+        if epoch <= 5:
+            epochs_without_improvement = 0
+
+        if epochs_without_improvement >= early_stopping_patience:
+            LOG.info(f"Early stopping triggered after {epoch} epochs. Maximum CB513 Q8 accuracy: {best_cb513_q8_accuracy:.3f}")
+            break
 
         # Salvataggio del checkpoint
         if epoch % opts.training["save_every"] == 0:
             save_checkpoint(model, optimizer, epoch, loss.item(), opts)
 
-        scheduler.step()
+        # scheduler.step()
+        scheduler.step(cb513_loss)
 
-
-def q8_accuracy(model, loader, opts):
-    """Calcola la Q8 accuracy sul dataset di validazione."""
+def evaluate(model, loader, loss_function, opts):
+    """Calcola la loss e l'accuratezza Q8 e Q3 sul dataset di validazione o test."""
     model.eval()
-    correct_predictions = 0
-    total_predictions = 0
+
+    total_loss = 0
+    q8_correct_predictions = 0
+    q8_total_predictions = 0
+
+    if opts.training["include_q3"] == True:
+        # Mappatura da Q8 a Q3
+        q8_to_q3 = {
+            0: 0,  # H -> H (helix)
+            1: 0,  # G -> H (helix)
+            2: 0,  # I -> H (helix)
+            3: 1,  # E -> E (strand)
+            4: 1,  # B -> E (strand)
+            5: 2,  # T -> C (coil)
+            6: 2,  # S -> C (coil)
+            7: 2,  # C -> C (coil)
+        }
+        q3_correct_predictions = 0
+        q3_total_predictions = 0
+
     with torch.no_grad():
         for X, Y in loader:
             X, Y = X.to(opts.device), Y.to(opts.device)
             outputs = model(X)
-            predictions = torch.argmax(outputs, dim=1)
-            correct_predictions += (predictions == Y.argmax(dim=1)).sum().item()
-            total_predictions += Y.numel() // 8
-    return correct_predictions / total_predictions
 
-def q3_accuracy(model, loader, opts):
-    """Calcola la Q3 accuracy sul dataset di validazione."""
-    # Mappatura da Q8 a Q3
-    q8_to_q3 = {
-        0: 0,  # H -> H (helix)
-        1: 0,  # G -> H (helix)
-        2: 0,  # I -> H (helix)
-        3: 1,  # E -> E (strand)
-        4: 1,  # B -> E (strand)
-        5: 2,  # T -> C (coil)
-        6: 2,  # S -> C (coil)
-        7: 2,  # C -> C (coil)
-    }
+            loss = loss_function(outputs.reshape(-1, 8), Y.reshape(-1, 8).argmax(dim=1))
+            total_loss += loss.item()
 
-    model.eval()
-    correct_predictions = 0
-    total_predictions = 0
-    with torch.no_grad():
-        for X, Y in loader:
-            X, Y = X.to(opts.device), Y.to(opts.device)
-            outputs = model(X)
-            predictions_q8 = torch.argmax(outputs, dim=1)
-            predictions_q3 = torch.tensor(
-                [q8_to_q3[p.item()] for p in predictions_q8.flatten()],
-                device=opts.device,
-            ).reshape(predictions_q8.shape)
+            q8_predictions = torch.argmax(outputs, dim=1)
+            q8_labels = Y.argmax(dim=1)
+            q8_correct_predictions += (q8_predictions == q8_labels).sum().item()
+            q8_total_predictions += q8_labels.numel()
 
-            labels_q8 = Y.argmax(dim=1)
-            labels_q3 = torch.tensor(
-                [q8_to_q3[l.item()] for l in labels_q8.flatten()],
-                device=opts.device,
-            ).reshape(labels_q8.shape)
+            if opts.training["include_q3"] == True:
+                q3_predictions = torch.tensor(
+                    [q8_to_q3[p.item()] for p in q8_predictions.flatten()],
+                    device=opts.device,
+                ).reshape(q8_predictions.shape)
+                q3_labels = torch.tensor(
+                    [q8_to_q3[l.item()] for l in q8_labels.flatten()],
+                    device=opts.device,
+                ).reshape(q8_labels.shape)
+                q3_correct_predictions = (q3_predictions == q3_labels).sum().item()
+                q3_total_predictions = q3_labels.numel()
 
-            correct_predictions += (predictions_q3 == labels_q3).sum().item()
-            total_predictions += labels_q3.numel()
+    avg_loss = total_loss / len(loader)
+    q8_accuracy = q8_correct_predictions / q8_total_predictions
 
-    return correct_predictions / total_predictions
+    if opts.training["include_q3"] == False:
+        return avg_loss, q8_accuracy
+    elif opts.training["include_q3"] == True:
+        q3_accuracy = q3_correct_predictions / q3_total_predictions
+        return avg_loss, q8_accuracy, q3_accuracy
+    else:
+        raise ValueError(f"Unknown train type {opts.training['include_q3']}")
 
+def log_metrics(writer, metrics, epoch):
+    with writer.as_default():
+        for key, value in metrics.items():
+            tf.summary.scalar(key, value, step=epoch)
 
 def main(opts):
     from dataset import load_data
@@ -218,6 +244,19 @@ def main(opts):
         visualize(
             model,
             "fcn",
+            torch.randn(opts.training["batch_size"], opts.model["in_channels"], 700),
+        )
+    elif opts.model["name"] == "unet_dropout":
+        model = UNetDropout(
+            in_channels=opts.model["in_channels"],
+            out_channels=opts.model["out_channels"],
+            base_filters=opts.model["base_filters"],
+            kernel_size=opts.model["kernel_size"],
+            dropout_rate=opts.model["dropout_rate"],
+        )
+        visualize(
+            model,
+            "unet_dropout",
             torch.randn(opts.training["batch_size"], opts.model["in_channels"], 700),
         )
     else:
