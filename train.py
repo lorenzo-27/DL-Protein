@@ -10,10 +10,12 @@ import yaml
 from ipdb import launch_ipdb_on_exception
 from rich.logging import RichHandler
 
-from m_cnn import CNN
-from m_fcn import FCN
-from m_unet import UNet
-from m_unet_dropout import UNetDropout
+from models import m_cnn, m_fcn, m_unet, m_unet_dropout
+
+CNN = m_cnn.CNN
+FCN = m_fcn.FCN
+UNet = m_unet.UNet
+UNetDropout = m_unet_dropout.UNetDropout
 
 
 def get_logger():

@@ -6,13 +6,15 @@ model:
 
 training:
   learning_rate: 0.0002
-  batch_size: 64
+  batch_size: 512
   num_epochs: 300
   weight_decay: 0.0005
   checkpoint_dir: checkpoints/
   log_every: 5
   save_every: 8
   batch_window: 10  # Numero di batch per il calcolo della media delle metriche
+  include_q3: false # true / false - se includere la metrica Q3
+  early_stopping: 10 # Numero di epoche per cui il modello non migliora prima di fermare l'addestramento
 
 dataset:
   train_path: cullpdb+profile_6133.npy.gz
