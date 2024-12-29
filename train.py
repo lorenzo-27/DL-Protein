@@ -10,12 +10,14 @@ import yaml
 from ipdb import launch_ipdb_on_exception
 from rich.logging import RichHandler
 
-from models import m_cnn, m_fcn, m_unet, m_unet_dropout
+from models import m_cnn, m_fcn, m_unet, m_unet_dropout, m_unet_embedding, m_unet_dropout_embedding
 
 CNN = m_cnn.CNN
 FCN = m_fcn.FCN
 UNet = m_unet.UNet
 UNetDropout = m_unet_dropout.UNetDropout
+UNetEmbedding = m_unet_embedding.UNetEmbedding
+UNetDropoutEmbedding = m_unet_dropout_embedding.UNetDropoutEmbedding
 
 
 def get_logger():
@@ -66,11 +68,13 @@ def train_loop(model, train_loader, val_loader, test_loader, cb513_test_loader, 
         weight_decay=opts.training["weight_decay"],
     )
     # scheduler = torch.optim.lr_scheduler.ExponentialLR(optimizer, gamma=0.9)
-    scheduler = torch.optim.lr_scheduler.ReduceLROnPlateau(optimizer, mode='min', factor=0.1, patience=5, verbose=True)
+    scheduler = torch.optim.lr_scheduler.ReduceLROnPlateau(optimizer, mode='min', factor=0.1, patience=5)
     loss_function = torch.nn.CrossEntropyLoss()
 
     step = 0
-    best_cb513_q8_accuracy = 0
+    best_val_accuracy = 0
+    best_val_loss = np.inf
+    best_model_state = None
     epochs_without_improvement = 0
     early_stopping_patience = opts.training["early_stopping_patience"]
 
@@ -123,17 +127,19 @@ def train_loop(model, train_loader, val_loader, test_loader, cb513_test_loader, 
             raise ValueError(f"Unknown train type {opts.training['include_q3']}")
 
         # Early stopping check
-        if cb513_q8_accuracy > best_cb513_q8_accuracy:
-            best_cb513_q8_accuracy = cb513_q8_accuracy
+        if val_q8_accuracy >= best_val_accuracy and val_loss <= best_val_loss:
+            best_val_accuracy = val_q8_accuracy
+            best_val_loss = val_loss
+            best_model_state = model.state_dict()
             epochs_without_improvement = 0
         else:
             epochs_without_improvement += 1
 
-        if epoch <= 5:
-            epochs_without_improvement = 0
-
         if epochs_without_improvement >= early_stopping_patience:
-            LOG.info(f"Early stopping triggered after {epoch} epochs. Maximum CB513 Q8 accuracy: {best_cb513_q8_accuracy:.3f}")
+            LOG.info(f"Early stopping triggered after {epoch} epochs. Maximum Validation Q8 accuracy: {best_val_accuracy:.3f}. Minimum Validation loss: {best_val_loss:.6f}")
+            if best_model_state is not None:
+                model.load_state_dict(best_model_state)
+                save_checkpoint(model, optimizer, epoch, loss.item(), opts)
             break
 
         # Salvataggio del checkpoint
@@ -225,18 +231,6 @@ def main(opts):
             "unet",
             torch.randn(opts.training["batch_size"], opts.model["in_channels"], 700),
         )
-    elif opts.model["name"] == "cnn":
-        model = CNN(
-            in_channels=opts.model["in_channels"],
-            out_channels=opts.model["out_channels"],
-            base_filters=opts.model["base_filters"],
-            kernel_size=opts.model["kernel_size"],
-        )
-        visualize(
-            model,
-            "cnn",
-            torch.randn(opts.training["batch_size"], opts.model["in_channels"], 700),
-        )
     elif opts.model["name"] == "fcn":
         model = FCN(
             in_channels=opts.model["in_channels"],
@@ -259,6 +253,33 @@ def main(opts):
         visualize(
             model,
             "unet_dropout",
+            torch.randn(opts.training["batch_size"], opts.model["in_channels"], 700),
+        )
+    elif opts.model["name"] == "unet_embedding":
+        model = UNetEmbedding(
+            in_channels=opts.model["in_channels"],
+            out_channels=opts.model["out_channels"],
+            base_filters=opts.model["base_filters"],
+            kernel_size=opts.model["kernel_size"],
+            embedding_dim=opts.model["embedding_dim"],
+        )
+        visualize(
+            model,
+            "unet_embedding",
+            torch.randn(opts.training["batch_size"], opts.model["in_channels"], 700),
+        )
+    elif opts.model["name"] == "unet_dropout_embedding":
+        model = UNetDropoutEmbedding(
+            in_channels=opts.model["in_channels"],
+            out_channels=opts.model["out_channels"],
+            base_filters=opts.model["base_filters"],
+            kernel_size=opts.model["kernel_size"],
+            dropout_rate=opts.model["dropout_rate"],
+            embedding_dim=opts.model["embedding_dim"],
+        )
+        visualize(
+            model,
+            "unet_dropout_embedding",
             torch.randn(opts.training["batch_size"], opts.model["in_channels"], 700),
         )
     else:
