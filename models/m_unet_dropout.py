@@ -97,6 +97,7 @@ def load_model(config_path):
         out_channels=model_params["out_channels"],
         base_filters=model_params["base_filters"],
         kernel_size=model_params["kernel_size"],
+        dropout_rate=model_params["dropout_rate"],
     )
     return model
 
@@ -112,7 +113,7 @@ def main():
     input_length = 700
     input_data = torch.randn(batch_size, 21, input_length)
 
-    config_path = "m_unet.yaml"
+    config_path = "m_unet_dropout.yaml"
     model = load_model(config_path)
 
     _ = model(input_data)
