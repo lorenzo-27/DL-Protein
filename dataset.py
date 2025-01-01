@@ -1,65 +1,122 @@
-import argparse
-import gzip
-import torch
-from torch.utils.data import DataLoader, TensorDataset
 import numpy as np
+import torch
+from torch.utils.data import Dataset, DataLoader
+import gzip
 
-SEQ_LEN = 700
-NUM_FEATURES = 57
 
-def load_dataset(path):
-    with gzip.open(f"data/{path}", "rb") as f:
-        ds = np.load(f)
-    ds = np.reshape(ds, (-1, SEQ_LEN, NUM_FEATURES))
+class ProteinDataset(Dataset):
+    def __init__(self, data_path):
+        """
+        Initialize the dataset.
+        Args:
+            data_path: Path to the .npy.gz file
+        """
+        # Load the compressed data
+        with gzip.open(f"data/{data_path}", 'rb') as f:
+            self.data = np.load(f)
 
-    # Rimozione features solubilità, terminali N e C, "X" e no_seq
-    ds = np.delete(ds, [20, 21, 30, 31, 32, 33, 34, 54, 56], axis=2)
+        # Process the data
+        self.process_data()
 
-    # Conversione in tensori
-    ds = torch.from_numpy(ds)
+    def process_data(self):
+        """Process the raw data while maintaining sequence structure."""
+        # Original data shape is (num_proteins, 700, 57)
+        self.num_proteins = self.data.shape[0]
+        self.seq_length = self.data.shape[1]
 
-    # Features (X) e labels (y)
-    residues_1h = ds[:, :, :20].type(torch.float)       # One-Hot Amino acid residues - (N, L, 20)
-    residues_int = torch.argmax(residues_1h, dim=2)     # Int amino acid residues - (N, L)
-    pssm = ds[:, :, 28:].type(torch.float)              # PSSMs - (N, L, 20)
-    labels = ds[:, :, 20:28]                            # Secondary structure labels - (N, L, 8)
+        # Extract features
+        aa_features = self.data[:, :, 0:20]  # one-hot encoding
+        pssm_features = self.data[:, :, 35:55]  # PSSM values
 
-    # Concatenazione di residues_int e pssm - (N, L, 21)
-    X = torch.cat((residues_int.unsqueeze(-1), pssm), dim=-1)
+        # Normalize PSSM features per-protein
+        pssm_mean = np.mean(pssm_features, axis=(1, 2), keepdims=True)
+        pssm_std = np.std(pssm_features, axis=(1, 2), keepdims=True)
+        pssm_features = (pssm_features - pssm_mean) / (pssm_std + 1e-8)
 
-    # y: etichette
-    y = labels
+        # Add positional encoding
+        positions = np.arange(self.seq_length)
+        pos_encoding = positions / self.seq_length
+        pos_encoding = np.tile(pos_encoding[np.newaxis, :, np.newaxis], (self.num_proteins, 1, 1))
 
-    # Transpose X and y to (N, C, L)
-    X = X.transpose(1, 2)
-    y = y.transpose(1, 2)
+        # Combine all features
+        self.features = np.concatenate([aa_features, pssm_features, pos_encoding], axis=2)
 
-    return X, y
+        # Extract labels
+        self.labels = self.data[:, :, 22:30]
+
+        # Create masks
+        self.mask = np.sum(aa_features, axis=2) != 0
+
+    def __len__(self):
+        """Return the number of samples (proteins) in the dataset."""
+        return self.num_proteins
+
+    def __getitem__(self, idx):
+        """Return a sample from the dataset."""
+        # Get features and transpose to (channels, sequence_length)
+        features = torch.tensor(self.features[idx], dtype=torch.float32)  # Shape: (700, 40)
+        features = features.transpose(0, 1)  # Shape: (40, 700)
+
+        # Get labels and transpose to match the expected shape
+        labels = torch.tensor(self.labels[idx], dtype=torch.float32)  # Shape: (700, 8)
+        labels = labels.transpose(0, 1)  # Shape: (8, 700)
+
+        # Get mask
+        mask = torch.tensor(self.mask[idx], dtype=torch.bool)  # Shape: (700,)
+
+        return features, labels, mask
 
 
 def load_data(batch_size):
-    cullpdb_X, cullpdb_y = load_dataset("cullpdb+profile_6133_filtered.npy.gz")
-    cb513_X, cb513_y = load_dataset("cb513+profile_split1.npy.gz")
+    """
+    Load and prepare the protein sequence datasets.
 
-    train_loader = DataLoader(TensorDataset(cullpdb_X, cullpdb_y), batch_size=batch_size, shuffle=True)
-    test_loader = DataLoader(TensorDataset(cb513_X, cb513_y), batch_size=batch_size, shuffle=False)
+    Args:
+        batch_size: Size of batches for the DataLoader
+
+    Returns:
+        train_loader: DataLoader for the training set (CullPDB)
+        test_loader: DataLoader for the test set (CB513)
+    """
+    # Load datasets
+    train_dataset = ProteinDataset('cullpdb+profile_6133_filtered.npy.gz')
+    test_dataset = ProteinDataset('cb513+profile_split1.npy.gz')
+
+    # Create data loaders
+    train_loader = DataLoader(
+        train_dataset,
+        batch_size=batch_size,
+        shuffle=True,
+        num_workers=4,
+        pin_memory=True
+    )
+
+    test_loader = DataLoader(
+        test_dataset,
+        batch_size=batch_size,
+        shuffle=False,
+        num_workers=4,
+        pin_memory=True
+    )
 
     return train_loader, test_loader
 
 
-def main(args):
-    # Load the datasets
-    train_loader, test_loader = load_data(8)
-    print(f"Train set: {len(train_loader.dataset)}, Test set: {len(test_loader.dataset)}")
-
-
+# Example usage:
 if __name__ == "__main__":
-    parser = argparse.ArgumentParser(
-        description="Protein Secondary Structure Prediction"
-    )
-    parser.add_argument("--train_path", default="cullpdb+profile_6133_filtered.npy.gz")
-    parser.add_argument("--test_path", default="cb513+profile_split1.npy.gz")
-    args = parser.parse_args()
-    print(vars(args))
+    # Test data loading
+    batch_size = 32
+    train_loader, test_loader = load_data(batch_size)
 
-    main(args)
+    # Print dataset information
+    print(f"Number of batches in train_loader: {len(train_loader)}")
+    print(f"Number of batches in test_loader: {len(test_loader)}")
+
+    # Test a batch
+    for features, labels, mask in train_loader:
+        print(f"Feature shape: {features.shape}")  # Should be [batch_size, 40, 700]
+        print(f"Labels shape: {labels.shape}")  # Should be [batch_size, 8, 700]
+        print(f"Mask shape: {mask.shape}")  # Should be [batch_size, 700]
+        print(f"Feature type: {features.dtype}")
+        print(f"Labels type: {labels.dtype}")
+        break
