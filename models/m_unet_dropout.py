@@ -1,24 +1,48 @@
 import torch
 import yaml
+from sympy.strategies.branch import identity
 from torch import nn
 
 class ConvBlock(nn.Module):
     def __init__(self, in_channels, out_channels, kernel_size, dropout_rate):
-        """Blocco di convoluzione 1D con due layer convoluzionali, BatchNorm, ReLU e Dropout."""
+        """Blocco convoluzionale 1D con BatchNorm, ReLU e Dropout."""
         super().__init__()
-        self.layers = nn.Sequential(
-            nn.Conv1d(in_channels, out_channels, kernel_size, padding="same"),
-            nn.BatchNorm1d(out_channels),
-            nn.ReLU(),
-            nn.Dropout(dropout_rate),
-            nn.Conv1d(out_channels, out_channels, kernel_size, padding="same"),
-            nn.BatchNorm1d(out_channels),
-            nn.ReLU(),
-            nn.Dropout(dropout_rate),
-        )
+        self.use_residual = in_channels == out_channels
+        self.conv1 = nn.Conv1d(in_channels, out_channels, kernel_size, padding="same")
+        self.bn1 = nn.BatchNorm1d(out_channels)
+        self.relu1 = nn.ReLU()
+        self.dropout1 = nn.Dropout(dropout_rate)
+
+        self.conv2 = nn.Conv1d(out_channels, out_channels, kernel_size, padding="same")
+        self.bn2 = nn.BatchNorm1d(out_channels)
+        self.relu2 = nn.ReLU()
+        self.dropout2 = nn.Dropout(dropout_rate)
+
+        if not self.use_residual:
+            self.residual_conv = nn.Conv1d(in_channels, out_channels, 1)
+            self.residual_bn = nn.BatchNorm1d(out_channels)
 
     def forward(self, x):
-        return self.layers(x)
+        identity = x
+
+        out = self.conv1(x)
+        out = self.bn1(out)
+        out = self.relu1(out)
+        out = self.dropout1(out)
+
+        out = self.conv2(out)
+        out = self.bn2(out)
+
+        if self.use_residual:
+            out += identity
+        else:
+            residual = self.residual_conv(identity)
+            residual = self.residual_bn(residual)
+            out += residual
+
+        out = self.relu2(out)
+        out = self.dropout2(out)
+        return out
 
 
 class DownBlock(nn.Module):
@@ -56,6 +80,7 @@ class UNetDropout(nn.Module):
     def __init__(self, in_channels, out_channels, base_filters, kernel_size, dropout_rate):
         """Implementazione della U-Net 1D con blocchi modulari."""
         super().__init__()
+        self.input_norm = nn.BatchNorm1d(in_channels)
         self.encoder1 = ConvBlock(in_channels, base_filters, kernel_size, dropout_rate)
         self.encoder2 = DownBlock(base_filters, base_filters * 2, kernel_size, dropout_rate)
         self.encoder3 = DownBlock(base_filters * 2, base_filters * 4, kernel_size, dropout_rate)
@@ -70,7 +95,24 @@ class UNetDropout(nn.Module):
 
         self.final_conv = nn.Conv1d(base_filters, out_channels, kernel_size=1)
 
+        self._initialize_weights()
+
+    def _initialize_weights(self):
+        for m in self.modules():
+            if isinstance(m, nn.Conv1d):
+                nn.init.kaiming_normal_(m.weight, mode="fan_out", nonlinearity="relu")
+                if m.bias is not None:
+                    nn.init.zeros_(m.bias)
+            elif isinstance(m, nn.BatchNorm1d):
+                nn.init.ones_(m.weight)
+                nn.init.zeros_(m.bias)
+            elif isinstance(m, nn.ConvTranspose1d):
+                nn.init.kaiming_normal_(m.weight, mode="fan_out", nonlinearity="relu")
+                if m.bias is not None:
+                    nn.init.zeros_(m.bias)
+
     def forward(self, x):
+        x = self.input_norm(x)
         enc1 = self.encoder1(x)
         enc2 = self.encoder2(enc1)
         enc3 = self.encoder3(enc2)
