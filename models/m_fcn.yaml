@@ -1,23 +1,24 @@
 model:
   name: fcn
-  in_channels: 21
+  in_channels: 41
   out_channels: 8
   base_filters: 64
+  kernel_size: 3
+  dropout_rate: 0.5
 
 training:
-  learning_rate: 0.0002
-  batch_size: 512
+  learning_rate: 0.001
+  batch_size: 32
   num_epochs: 300
-  weight_decay: 0.0005
+  weight_decay: 0.0001
   checkpoint_dir: checkpoints/
-  log_every: 5
-  save_every: 8
+  log_every: 50
+  save_every: 5
   batch_window: 10  # Numero di batch per il calcolo della media delle metriche
   include_q3: false # true / false - se includere la metrica Q3
-  early_stopping: 10 # Numero di epoche per cui il modello non migliora prima di fermare l'addestramento
+  early_stopping_patience: 15 # Numero di epoche per cui il modello non migliora prima di fermare l'addestramento
 
 dataset:
   train_path: cullpdb+profile_6133.npy.gz
   test_path: cb513+profile_split1.npy.gz
   data_dir: data/  # Directory base dei file di dataset
-  seed: 42 # seed per poter riprodurre gli esperimenti
