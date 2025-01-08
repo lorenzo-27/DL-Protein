@@ -7,15 +7,10 @@ import gzip
 class ProteinDataset(Dataset):
     def __init__(self, data_path):
         """
-        Initialize the dataset.
-        Args:
-            data_path: Path to the .npy.gz file
+        Initialize the dataset by loading the compressed data and processing it.
         """
-        # Load the compressed data
         with gzip.open(f"data/{data_path}", 'rb') as f:
             self.data = np.load(f)
-
-        # Process the data
         self.process_data()
 
     def process_data(self):
@@ -101,10 +96,8 @@ def load_data(batch_size):
 
     return train_loader, test_loader
 
-
-# Example usage:
-if __name__ == "__main__":
-    # Test data loading
+def main():
+    # Load data
     batch_size = 32
     train_loader, test_loader = load_data(batch_size)
 
@@ -120,3 +113,10 @@ if __name__ == "__main__":
         print(f"Feature type: {features.dtype}")
         print(f"Labels type: {labels.dtype}")
         break
+
+
+if __name__ == "__main__":
+    from ipdb import launch_ipdb_on_exception
+
+    with launch_ipdb_on_exception():
+        main()

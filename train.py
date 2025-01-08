@@ -16,7 +16,6 @@ FCN = m_fcn.FCN
 UNet = m_unet.UNet
 UNetOptimized = m_unet_optimized.UNetOptimized
 
-
 def get_logger():
     FORMAT = "%(message)s"
     logging.basicConfig(
@@ -26,7 +25,6 @@ def get_logger():
     return log
 
 LOG = get_logger()
-
 
 def save_checkpoint(model, optimizer, epoch, loss, opts):
     fname = os.path.join(opts.training["checkpoint_dir"], f"e_{epoch:05d}.chp")
@@ -95,7 +93,7 @@ def train_loop(model, train_loader, cb513_test_loader, opts):
                 LOG.info(f"Epoch {epoch}, Batch {batch_idx}: Loss={train_avg_loss:.6f}, [Q8]Acc={train_q8_accuracy:.3f}")
                 step += 1
 
-        if opts.training["include_q3"] == False:
+        if not opts.training["include_q3"]:
             cb513_loss, cb513_q8_accuracy = evaluate(model, cb513_test_loader, loss_function, opts)
             log_metrics(cb513_writer, {"loss": cb513_loss, "accuracy": cb513_q8_accuracy}, epoch)
             LOG.info(f"Epoch {epoch}: CB513Loss={cb513_loss:.6f}, [Q8]CB513Acc={cb513_q8_accuracy:.3f}")
@@ -150,16 +148,16 @@ def evaluate(model, loader, loss_function, opts):
         }
 
     with torch.no_grad():
-        for X, Y, mask in loader:
-            X, Y, mask = X.to(opts.device), Y.to(opts.device), mask.to(opts.device)
+        for X, y, mask in loader:
+            X, y, mask = X.to(opts.device), y.to(opts.device), mask.to(opts.device)
             outputs = model(X)
 
-            loss = loss_function(outputs, Y)
+            loss = loss_function(outputs, y)
             loss = (loss * mask).sum() / mask.sum()
             total_loss += loss.item()
 
             q8_predictions = torch.argmax(outputs, dim=1)
-            q8_labels = torch.argmax(Y, dim=1)
+            q8_labels = torch.argmax(y, dim=1)
             q8_correct += ((q8_predictions == q8_labels) * mask).sum().item()
             total_valid_positions += mask.sum().item()
 
