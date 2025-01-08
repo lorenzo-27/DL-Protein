@@ -115,5 +115,6 @@ tensorboard --logdir tensorboard/model/
 │   ├── unet/
 │   └── unet_optimized/
 ├── dataset.py
-└── train.py
+├── train.py
+└── visualize_network.py
 ```
