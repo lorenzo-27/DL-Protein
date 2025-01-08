@@ -10,15 +10,12 @@ import yaml
 from ipdb import launch_ipdb_on_exception
 from rich.logging import RichHandler
 
-from models import m_cnn, m_fcn, m_unet, m_unet_dropout, m_unet_embedding, m_unet_dropout_embedding, m_o_unet
+from models import m_fcn, m_unet, m_unet_optimized
 
-CNN = m_cnn.CNN
 FCN = m_fcn.FCN
 UNet = m_unet.UNet
-UNetDropout = m_unet_dropout.UNetDropout
-UNetEmbedding = m_unet_embedding.UNetEmbedding
-UNetDropoutEmbedding = m_unet_dropout_embedding.UNetDropoutEmbedding
-OUNet = m_o_unet.OUNet
+UNetOptimized = m_unet_optimized.UNetOptimized
+
 
 def get_logger():
     FORMAT = "%(message)s"
@@ -57,7 +54,6 @@ def train_loop(model, train_loader, cb513_test_loader, opts):
         lr=opts.training["learning_rate"],
         weight_decay=opts.training["weight_decay"]
     )
-    # scheduler = torch.optim.lr_scheduler.ExponentialLR(optimizer, gamma=0.9)
     scheduler = torch.optim.lr_scheduler.ReduceLROnPlateau(optimizer, mode='min', factor=0.5, patience=3, min_lr=1e-6)
     loss_function = torch.nn.CrossEntropyLoss()
 
@@ -128,7 +124,6 @@ def train_loop(model, train_loader, cb513_test_loader, opts):
         if epoch % opts.training["save_every"] == 0:
             save_checkpoint(model, optimizer, epoch, loss.item(), opts)
 
-        # scheduler.step()
         scheduler.step(cb513_loss)
         LOG.info(f"LR: {scheduler.get_last_lr()}")
 
@@ -213,14 +208,16 @@ def main(opts):
             in_channels=opts.model["in_channels"],
             out_channels=opts.model["out_channels"],
             base_filters=opts.model["base_filters"],
+            kernel_size=opts.model["kernel_size"],
+            dropout_rate=opts.model["dropout_rate"],
         )
         visualize(
             model,
             "fcn",
             torch.randn(opts.training["batch_size"], opts.model["in_channels"], 700),
         )
-    elif opts.model["name"] == "unet_dropout":
-        model = UNetDropout(
+    elif opts.model["name"] == "unet_optimized":
+        model = UNetOptimized(
             in_channels=opts.model["in_channels"],
             out_channels=opts.model["out_channels"],
             base_filters=opts.model["base_filters"],
@@ -229,48 +226,7 @@ def main(opts):
         )
         visualize(
             model,
-            "unet_dropout",
-            torch.randn(opts.training["batch_size"], opts.model["in_channels"], 700),
-        )
-    elif opts.model["name"] == "unet_embedding":
-        model = UNetEmbedding(
-            in_channels=opts.model["in_channels"],
-            out_channels=opts.model["out_channels"],
-            base_filters=opts.model["base_filters"],
-            kernel_size=opts.model["kernel_size"],
-            embedding_dim=opts.model["embedding_dim"],
-        )
-        visualize(
-            model,
-            "unet_embedding",
-            torch.randn(opts.training["batch_size"], opts.model["in_channels"], 700),
-        )
-    elif opts.model["name"] == "unet_dropout_embedding":
-        model = UNetDropoutEmbedding(
-            in_channels=opts.model["in_channels"],
-            out_channels=opts.model["out_channels"],
-            base_filters=opts.model["base_filters"],
-            kernel_size=opts.model["kernel_size"],
-            dropout_rate=opts.model["dropout_rate"],
-            embedding_dim=opts.model["embedding_dim"],
-        )
-        visualize(
-            model,
-            "unet_dropout_embedding",
-            torch.randn(opts.training["batch_size"], opts.model["in_channels"], 700),
-        )
-    elif opts.model["name"] == "o_unet":
-        model = OUNet(
-            in_channels=opts.model["in_channels"],
-            out_channels=opts.model["out_channels"],
-            base_filters=opts.model["base_filters"],
-            kernel_size=opts.model["kernel_size"],
-            dropout_rate=opts.model["dropout_rate"],
-            depth=opts.model["depth"],
-        )
-        visualize(
-            model,
-            "o_unet",
+            "unet_optimized",
             torch.randn(opts.training["batch_size"], opts.model["in_channels"], 700),
         )
     else:
