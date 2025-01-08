@@ -8,9 +8,12 @@ class ConvBlock(nn.Module):
         """Blocco di convoluzione 1D con due layer convoluzionali, BatchNorm e ReLU."""
         super().__init__()
         self.layers = nn.Sequential(
+            # First convolutional layer
             nn.Conv1d(in_channels, out_channels, kernel_size, padding="same"),
             nn.BatchNorm1d(out_channels),
             nn.ReLU(),
+
+            # Second convolutional layer
             nn.Conv1d(out_channels, out_channels, kernel_size, padding="same"),
             nn.BatchNorm1d(out_channels),
             nn.ReLU(),
@@ -24,7 +27,7 @@ class DownBlock(nn.Module):
     def __init__(self, in_channels, out_channels, kernel_size):
         """Blocco di discesa 1D con MaxPooling seguito da un ConvBlock."""
         super().__init__()
-        self.pool = nn.MaxPool1d(kernel_size=2)
+        self.pool = nn.MaxPool1d(kernel_size=2, stride=2)
         self.conv = ConvBlock(in_channels, out_channels, kernel_size)
 
     def forward(self, x):
@@ -107,9 +110,9 @@ def main():
 
     console = Console()
 
-    batch_size = 256
+    batch_size = 8
     input_length = 700
-    input_data = torch.randn(batch_size, 21, input_length)
+    input_data = torch.randn(batch_size, 41, input_length)
 
     config_path = "m_unet.yaml"
     model = load_model(config_path)
