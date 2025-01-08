@@ -1,6 +1,5 @@
 import torch
 import yaml
-from sympy.strategies.branch import identity
 from torch import nn
 
 class ConvBlock(nn.Module):
@@ -76,7 +75,7 @@ class UpBlock(nn.Module):
         return x
 
 
-class UNetDropout(nn.Module):
+class UNetOptimized(nn.Module):
     def __init__(self, in_channels, out_channels, base_filters, kernel_size, dropout_rate):
         """Implementazione della U-Net 1D con blocchi modulari."""
         super().__init__()
@@ -134,7 +133,7 @@ def load_model(config_path):
         config = yaml.safe_load(file)
 
     model_params = config["model"]
-    model = UNetDropout(
+    model = UNetOptimized(
         in_channels=model_params["in_channels"],
         out_channels=model_params["out_channels"],
         base_filters=model_params["base_filters"],
@@ -151,11 +150,11 @@ def main():
 
     console = Console()
 
-    batch_size = 256
+    batch_size = 32
     input_length = 700
-    input_data = torch.randn(batch_size, 21, input_length)
+    input_data = torch.randn(batch_size, 41, input_length)
 
-    config_path = "m_unet_dropout.yaml"
+    config_path = "m_unet_optimized.yaml"
     model = load_model(config_path)
 
     _ = model(input_data)

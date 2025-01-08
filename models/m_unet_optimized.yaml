@@ -1,25 +1,24 @@
 model:
-  name: unet_dropout
-  in_channels: 21
+  name: unet_optimized
+  in_channels: 41
   out_channels: 8
   base_filters: 64
-  kernel_size: 7
-  dropout_rate: 0.5
+  kernel_size: 5
+  dropout_rate: 0.3
 
 training:
-  learning_rate: 0.0005
+  learning_rate: 0.003
   batch_size: 8
   num_epochs: 300
-  weight_decay: 0.00001
+  weight_decay: 0.01
   checkpoint_dir: checkpoints/
-  log_every: 50
-  save_every: 8
+  log_every: 100
+  save_every: 5
   batch_window: 10  # Numero di batch per il calcolo della media delle metriche
   include_q3: False # True / False - se includere la metrica Q3
-  early_stopping_patience: 20 # Numero di epoche per cui il modello non migliora prima di fermare l'addestramento
+  early_stopping_patience: 15 # Numero di epoche per cui il modello non migliora prima di fermare l'addestramento
 
 dataset:
-  train_path: cullpdb+profile_6133.npy.gz
+  train_path: cullpdb+profile_6133_filtered.npy.gz
   test_path: cb513+profile_split1.npy.gz
   data_dir: data/  # Directory base dei file di dataset
-  seed: 42 # seed per poter riprodurre gli esperimenti
