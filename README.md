@@ -1,102 +1,156 @@
-# Predizione della Struttura Secondaria delle Proteine
+# Protein Secondary Structure Prediction
 
-Questo progetto implementa diversi modelli di deep learning per la predizione della struttura secondaria delle proteine (Protein Secondary Structure Prediction - PSSP), basandosi sul lavoro di [Zhou et al. (2014)](https://arxiv.org/abs/1403.1347).
-L'obiettivo è confrontare l'efficacia di diverse architetture neurali, adattando le reti FCN ([Long et al. 2015](https://arxiv.org/abs/1411.4038)) e U-Net ([Ronneberger et al. 2015](https://arxiv.org/abs/1505.04597)) al dominio specifico della predizione della struttura delle proteine.
+This project implements several deep learning models for Protein Secondary Structure Prediction (PSSP), based on the work of [Zhou et al. (2014)](https://arxiv.org/abs/1403.1347).  
+The goal is to compare the effectiveness of different neural network architectures, adapting FCN ([Long et al. 2015](https://arxiv.org/abs/1411.4038)) and U-Net ([Ronneberger et al. 2015](https://arxiv.org/abs/1505.04597)) networks to the specific domain of protein structure prediction.
 
-## Panoramica del Progetto
+## Project Overview
 
-Il progetto implementa tre diverse architetture neurali per affrontare il problema della PSSP:
-1. FCN 1D
-2. U-Net 1D base
-3. U-Net 1D ottimizzata
+The project implements three different neural architectures to address the PSSP problem:
+1. 1D FCN
+2. Base 1D U-Net
+3. Optimized 1D U-Net
 
-## Dataset e Preprocessing
+## Dataset and Preprocessing
 
-Il progetto utilizza due dataset principali descritti da Zhou et al. (2014):
-- **CullPDB 6133 filtered**: dataset di training contenente 6133 proteine
-- **CB513**: dataset di test contenente 513 proteine
+The project uses two main datasets described by Zhou et al. (2014):
 
-E' possibile scaricare i due dataset dal sito della [Uniwersytet Warszawski](https://lbs.cent.uw.edu.pl/pipred).
+- **CullPDB 6133 filtered**: training dataset containing 6133 proteins
+    
+- **CB513**: test dataset containing 513 proteins
+    
 
-### Caratteristiche dei dati
-Ogni proteina nel dataset include:
-- One-hot encoding degli amminoacidi (20 features)
-- Valori PSSM (Position-Specific Scoring Matrix) (20 features)
-- Encoding posizionale (1 feature)
-- Labels per 8 classi di struttura secondaria (Q8)
+Both datasets can be downloaded from the [University of Warsaw website](https://lbs.cent.uw.edu.pl/pipred).
+
+### Data Features
+
+Each protein in the dataset includes:
+
+- One-hot encoding of amino acids (20 features)
+    
+- PSSM (Position-Specific Scoring Matrix) values (20 features)
+    
+- Positional encoding (1 feature)
+    
+- Labels for 8 secondary structure classes (Q8)
+    
 
 ### Preprocessing
-- Normalizzazione dei valori PSSM per proteina
-- Aggiunta di encoding posizionale normalizzato
-- Creazione di maschere per gestire sequenze di lunghezza variabile
-- Trasposizione dei dati per ottimizzare le operazioni convolutive
 
-## Modelli Implementati
+- Normalization of PSSM values per protein
+    
+- Addition of normalized positional encoding
+    
+- Creation of masks to handle variable-length sequences
+    
+- Data transposition to optimize convolutional operations
+    
 
-### 1. FCN 1D
-Implementazione monodimensionale della FCN descritta da Long et al. (2015):
-- Encoder in stile VGG16 adattato a 1D
-- Conversione dei layer fully connected in layer convoluzionali
-- Predizione multi-scala con fusione di feature maps
-- Batch Normalization e ReLU dopo ogni layer convoluzionale
+## Implemented Models
 
-### 2. U-Net 1D Base
-Adattamento monodimensionale della U-Net originale:
-- Architettura simmetrica encoder-decoder
-- Skip connections tra encoder e decoder
-- Batch Normalization e ReLU dopo ogni layer convolutivo
-- Operazioni di max pooling e up-sampling
-- Concatenazione delle feature maps attraverso le skip connections
+### 1. 1D FCN
 
-### 3. U-Net 1D Ottimizzata
-Versione migliorata della U-Net con ottimizzazioni specifiche per PSSP. Contiene tutte le caratteristiche della U-Net 1D base, con l'aggiunta di:
-- Batch Normalization iniziale sull'input
-- Dropout in ogni layer convolutivo
-- Inizializzazione dei pesi He Kaiming
-- Connessioni residuali nei blocchi convolutivi
+One-dimensional implementation of the FCN described by Long et al. (2015):
+
+- VGG16-style encoder adapted to 1D
+    
+- Fully connected layers converted into convolutional layers
+    
+- Multi-scale prediction with feature map fusion
+    
+- Batch Normalization and ReLU after each convolutional layer
+    
+
+### 2. Base 1D U-Net
+
+One-dimensional adaptation of the original U-Net:
+
+- Symmetric encoder-decoder architecture
+    
+- Skip connections between encoder and decoder
+    
+- Batch Normalization and ReLU after each convolutional layer
+    
+- Max pooling and up-sampling operations
+    
+- Feature map concatenation through skip connections
+    
+
+### 3. Optimized 1D U-Net
+
+An improved version of U-Net with optimizations specific to PSSP. It includes all features from the base 1D U-Net, with the addition of:
+
+- Initial Batch Normalization on the input
+    
+- Dropout in each convolutional layer
+    
+- He Kaiming weight initialization
+    
+- Residual connections within convolutional blocks
+    
 
 ## Training
 
-### Configurazione
-- Loss Function: Cross Entropy Loss con mascheramento
-- Ottimizzatore: AdamW con weight decay
-- Learning Rate: Scheduling adattivo con ReduceLROnPlateau
-- Early Stopping: Monitoraggio della loss sul dataset CB513
-- Batch Size: Configurabile via file YAML
-- Gradient Clipping: Norm massima 1.0
+### Configuration
 
-### Metriche
-- Loss sul training set
-- Accuratezza Q8 (8 classi)
-- Accuratezza Q3 (3 classi, opzionale)
-- Monitoraggio con TensorBoard
+- Loss Function: Cross Entropy Loss with masking
+    
+- Optimizer: AdamW with weight decay
+    
+- Learning Rate: Adaptive scheduling with ReduceLROnPlateau
+    
+- Early Stopping: Monitoring loss on the CB513 dataset
+    
+- Batch Size: Configurable via YAML file
+    
+- Gradient Clipping: Maximum norm 1.0
+    
 
-## Configurazione
+### Metrics
 
-Ogni modello ha un file YAML di configurazione associato che permette di definire:
-- Parametri dell'architettura
-- Parametri di training
-- Directory per i checkpoint
-- Frequenza di logging e salvataggio
-- Posizione dei dataset
+- Training set loss
+    
+- Q8 accuracy (8 classes)
+    
+- Q3 accuracy (3 classes, optional)
+    
+- Monitoring via TensorBoard
+    
 
-## Requisiti
-E' possibile installare i requisiti con:
+## Configuration
+
+Each model has an associated YAML configuration file that defines:
+
+- Architecture parameters
+    
+- Training parameters
+    
+- Checkpoint directories
+    
+- Logging and saving frequency
+    
+- Dataset locations
+    
+
+## Requirements
+
+You can install the required packages with:
+
 ```bash
 pip3 install -r requirements.txt
 ```
 
-## Utilizzo
+## Usage
 
 ```bash
-# Training di un modello
+# Train a model
 python3 train.py models/model_config.yaml
 
-# Visualizzazione dei risultati
+# Visualize results
 tensorboard --logdir tensorboard/model/
 ```
 
-## Struttura del Progetto
+## Project Structure
+
 ```
 .
 ├── checkpoints/
